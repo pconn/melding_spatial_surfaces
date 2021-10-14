@@ -66,6 +66,23 @@ Data_SSL$Omega_Y = array(dim=c(n_s,n_s,2))   #inverse of Sigma needed for fast d
 Data_SSL$Omega_Y[,,1]=VCinv_logPOP
 Data_SSL$Omega_Y[,,2]=VCinv_logUD
 
+#this block lifted from sdmTMB package
+set.seed(12345)
+Grid_locs = Grid_locs/1000
+knots <- stats::kmeans(x = Grid_locs, centers = 1000)  #1000 "center" locations (# knots will be more after triangulation)
+loc_centers <- knots$centers
+mesh <- INLA::inla.mesh.create(loc_centers, refine = TRUE)
+spde <- INLA::inla.spde2.matern(mesh)  
+
+A <- INLA::inla.spde.make.A(mesh, loc = as.matrix(Grid_locs)) #prediction matrix
+Data_SSL$A = as(A,"dgTMatrix")
+Data_SSL$n_mesh = ncol(A)
+Data_SSL$M0 = spde$param.inla$M0
+Data_SSL$M1 = spde$param.inla$M1
+Data_SSL$M2 = spde$param.inla$M2
+Data_SSL$Mesh_index = NULL
+
+
 save(Data_SSL,file="SSL_TMB_data.RData")
 
 

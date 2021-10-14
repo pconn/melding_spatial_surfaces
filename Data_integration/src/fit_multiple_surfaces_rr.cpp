@@ -79,9 +79,10 @@ Type objective_function<Type>::operator() ()
 
   // Data
   DATA_MATRIX( Y_i );       	// (n_s * n_surf) MATRIX of surface values for each data type at each sampled location 
-                            //NB: this will have to redone in more realistic situations where each surface has a different # of samples
+  //                           //NB: this will have to redone in more realistic situations where each surface has a different # of samples
   DATA_SPARSE_MATRIX(Omega_Y1);    //inverse of Sigma_Y (log scale)
   DATA_SPARSE_MATRIX(Omega_Y2);
+  DATA_SPARSE_MATRIX(A); // prediction matrix
   
   // normalization flag - used for speed -up
   DATA_INTEGER(flag); // flag == 0 => no data contribution added to jnll
@@ -92,12 +93,11 @@ Type objective_function<Type>::operator() ()
   DATA_INTEGER( n_surf );
   
 
-  // SPDE objects  - assume these are all the same for each surface
+  // // SPDE objects  - assume these are all the same for each surface
   DATA_SPARSE_MATRIX ( M0 );
   DATA_SPARSE_MATRIX ( M1 );
   DATA_SPARSE_MATRIX ( M2 );
-  DATA_IVECTOR ( Mesh_index ); //which mesh points are associated with grid cell centroids
-  
+
   // Options
   DATA_VECTOR ( options );
    //options [0] == 1 : use normalization trick
@@ -156,7 +156,11 @@ Type objective_function<Type>::operator() ()
 
   }
 
-
+  vector<Type> Mu_pred = A*Mu_s;
+  matrix<Type> Xi_pred(n_s,n_surf);
+  for(int isurf=0;isurf<n_surf;isurf++){
+    Xi_pred.col(isurf)=A*Xi_s.col(isurf);
+  }
 
   vector<Type> Diff(n_s);
   //vector<matrix<Type>>Sigma(n_surf);
@@ -177,14 +181,14 @@ Type objective_function<Type>::operator() ()
   //   jnll_comp(1) += neg_log_dmvnorm(Y_i_cur, Expected_cur, Omega_cur);
   // }
     for(int is=0;is<n_s;is++){
-      Diff(is) = Y_i(is,0)-alpha(0)-Mu_s(is)-Xi_s(is,0);
+      Diff(is) = Y_i(is,0)-alpha(0)-Mu_pred(is)-Xi_pred(is,0);
     }
     //jnll_comp(1) += neg_log_dmvnorm(Y_i_cur, Expected, Omega_Y1);
     jnll_comp(1) += GMRF(Omega_Y1,false)(Diff);
 
 
     for(int is=0;is<n_s;is++){
-      Diff(is) = Y_i(is,1)-alpha(1)-Mu_s(is)-Xi_s(is,1);
+      Diff(is) = Y_i(is,1)-alpha(1)-Mu_pred(is)-Xi_pred(is,1);
     }
     //jnll_comp(1) += neg_log_dmvnorm(Y_i_cur, Expected, Omega_Y2);
     jnll_comp(1) += GMRF(Omega_Y2,false)(Diff);
@@ -195,9 +199,9 @@ Type objective_function<Type>::operator() ()
   //jnll_comp(2) -= dnorm (Beta , beta_pri [0] , beta_pri [1] , true );
 
   Type mu_sum = 0;
-  for(int is=0;is<n_s;is++)mu_sum+=exp(Mu_s(is));
+  for(int is=0;is<n_s;is++)mu_sum+=exp(Mu_pred(is));
   vector<Type> Pi(n_s); //note only use first n_s observations!
-  for(int is=0;is<n_s;is++)Pi(is)= exp(Mu_s(is))/mu_sum;
+  for(int is=0;is<n_s;is++)Pi(is)= exp(Mu_pred(is))/mu_sum;
 
   // Total objective
    jnll = jnll_comp.sum();
@@ -206,8 +210,8 @@ Type objective_function<Type>::operator() ()
    REPORT( jnll_comp );
    REPORT( jnll );
    //REPORT( Expected);
-   REPORT( Xi_s );
-   REPORT( Mu_s );
+   REPORT( Xi_pred );
+   REPORT( Mu_pred );
    REPORT( log_tau_mu );
    REPORT( log_kappa_mu );
    REPORT( log_tau_xi );
@@ -217,7 +221,7 @@ Type objective_function<Type>::operator() ()
 
 
   // Bias correction output
-  ADREPORT(Pi);
+  //ADREPORT(Pi);
 
   return jnll;
 }

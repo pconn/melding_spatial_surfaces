@@ -1,22 +1,22 @@
 # summarize results of simulation study
 
-load('sim_RMSE.RData')
+load('./data_integration/inst/sim_RMSE.RData')
 
 arr_names = vector("list",4)
 arr_names[[1]]=c("2","4","8")
 arr_names[[2]]=c("All biased","One unbiased","All unbiased")
-arr_names[[3]]=c("All biased","All unbiased","One unbiased","Mean","First surface")
+arr_names[[3]]=c("All biased","All unbiased","One unbiased","Mean","First surface","AB - diag")
 arr_names[[4]]=as.character(c(1:500))
-RMSE_all = array(NA,dim=c(3,3,5,500),dimnames=arr_names)
+RMSE_all = array(NA,dim=c(3,3,6,500),dimnames=arr_names)
 RMSE_all[,,,1:100]=RMSE
 
-load('sim_RMSE_bat1.RData')
+load('./data_integration/inst/sim_RMSE_bat1.RData')
 RMSE_all[,,,101:200]=RMSE
-load('sim_RMSE_bat2.RData')
+load('./data_integration/inst/sim_RMSE_bat2.RData')
 RMSE_all[,,,201:300]=RMSE
-load('sim_RMSE_bat3.RData')
+load('./data_integration/inst/sim_RMSE_bat3.RData')
 RMSE_all[,,,301:400]=RMSE
-load('sim_RMSE_bat4.RData')
+load('./data_integration/inst/sim_RMSE_bat4.RData')
 RMSE_all[,,,401:500]=RMSE
 
 RMSE = apply(RMSE_all,c(1,2,3),'mean',na.rm=T)

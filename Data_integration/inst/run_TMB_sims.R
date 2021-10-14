@@ -47,7 +47,7 @@ L = chol(Cov_exp)
 Cov_exp_bias = fields::Exp.cov(XY,XY,aRange=6)
 L_bias = chol(Cov_exp_bias)
 
-RMSE = array(NA,dim=c(length(N_surfaces),length(Unbiased),5,n_sims)) #next to last array dim is for estimator type
+RMSE = array(NA,dim=c(length(N_surfaces),length(Unbiased),6,n_sims)) #next to last array dim is for estimator type
 
 #set up SPDE basis using INLA
 # Create the SPDE/GMRF model, (kappa^2-Delta)(tau x) = W:
@@ -195,7 +195,22 @@ for(isim in 1:n_sims){
         #SD=sdreport(Obj,bias.correct=FALSE)
         
         RMSE[iscen,ibias,1,isim] = sqrt(sum((Pi-Report$Pi[1:n_s])^2)/n_s)
-        
+
+        #w/ diagonal covariance matrix
+        Full_Omega = Data_all$Omega_Y
+        for(isurf in 1:n_surf)Data_all$Omega_Y[,,isurf]=diag(diag(Data_all$Omega_Y[,,isurf]),n_s,n_s)
+        Data_all$options[1]=0  #use normalization trick
+        Map_all=NULL
+        Obj = MakeADFun( data=Data_all, parameters=Params_all, random=Random_all, map=Map_all, DLL="fit_multiple_surfaces",silent=FALSE)
+        Obj$fn( Obj$par )
+        #Obj <- normalize ( Obj , flag ="flag", value = 0)
+        Lower = -50  #trying to prevent -Inf,Inf bounds resulting in nlminb failure (NaN gradient)
+        Upper = 50
+        Opt = nlminb( start=Obj$par, objective=Obj$fn, gradient=Obj$gr, lower=Lower, upper=Upper, control=list(trace=1, eval.max=500, iter.max=500))         #
+        Report = Obj$report()
+        #SD=sdreport(Obj,bias.correct=FALSE)
+        RMSE[iscen,ibias,6,isim] = sqrt(sum((Pi-Report$Pi[1:n_s])^2)/n_s)
+        Data_all$Omega_Y = Full_Omega
         
         # estimate combined surface assuming all surfaces unbiased
         Ind_log$est_mod=2
@@ -256,95 +271,95 @@ for(isim in 1:n_sims){
 }
 
 
-#data mean
-Pi_obs = matrix(0,n_surf,n_s)
-for(isurf in 1:n_surf)Pi_obs[isurf,]=exp(Data_all$Y_i[,isurf])/sum(exp(Data_all$Y_i[,isurf]))
-Pi_mean=colMeans(Pi_obs)
-
-source('c:/users/paul.conn/git/OkhotskST/OkhotskSeal/R/util_funcs.R')
-
-plot_N_map_xy(N=Pi,XY=Grid_locs,leg.title="Rel abundance")
-
-plot_N_map_xy(N=Report$Pi[1:n_s],XY=Grid_locs,leg.title="Rel abundance")
-
-plot_N_map_xy(N=Pi_mean,XY=Grid_locs,leg.title="Rel abundance")
-
-sum((Pi-Report$Pi[1:n_s])^2)/n_s
-sum((Pi-Pi_mean)^2)/n_s
-
-
-#plot_N_map_xy(N=Report$Mu_s[1:n_s]/sum(Report$Mu_s[1:n_s]),XY=Grid_locs,leg.title="Rel abundance")
-
-plot_N_map_xy(N=exp(Data_all$Y_i[,2]),XY=Grid_locs,leg.title="Rel abundance")
-plot_N_map_xy(N=exp(Data_all$Y_i[,1]),XY=Grid_locs,leg.title="Rel abundance")
-plot_N_map_xy(N=exp(Data_all$Y_i[,3]),XY=Grid_locs,leg.title="Rel abundance")
-plot_N_map_xy(N=exp(Data_all$Y_i[,4]),XY=Grid_locs,leg.title="Rel abundance")
-plot_N_map_xy(N=exp(Data_all$Y_i[,5]),XY=Grid_locs,leg.title="Rel abundance")
-
-plot_N_map_xy(N=exp(Report$Xi[1:n_s,1]),XY=Grid_locs,leg.title="Rel abundance")
-plot_N_map_xy(N=exp(Report$Xi[1:n_s,2]),XY=Grid_locs,leg.title="Rel abundance")
-plot_N_map_xy(N=exp(Report$Xi[1:n_s,3]),XY=Grid_locs,leg.title="Rel abundance")
-plot_N_map_xy(N=exp(Report$Xi[1:n_s,4]),XY=Grid_locs,leg.title="Rel abundance")
-plot_N_map_xy(N=exp(Report$Xi[1:n_s,5]),XY=Grid_locs,leg.title="Rel abundance")
-
-
-
-
-#cur_day=10
-#plot_N_map_xy(N=Report$Z_s[1,((cur_day-1)*n_s+1):(cur_day*n_s)],XY=loc_s,leg.title="Abundance")
-
-Converge=Opt$convergence
-
-
-#plot count data by apparent species
-Count = rowSums(Data$C_i[,1:3])
-Coords3 = Coords2[Mapping[,1],]
-plot_N_map_xy(N=Count,XY=Coords3,leg.title="Count")
-plot_N_map_xy(N=Report$E_count_sp[1,],XY=Coords3,leg.title="Count")
-
-#look at thinning parameters
-plot_N_map_xy(N=Thin[1:1285],XY=Coords3,leg.title="Count")
-plot_N_map_xy(N=Report$Thin_trans[1,],XY=Coords3,leg.title="Count")
-
-Count = rowSums(Data$C_i[,4:6])
-Coords3 = Coords2[Mapping[,1],]
-plot_N_map_xy(N=Count,XY=Coords3,leg.title="Count")
-
-Count = rowSums(Data$C_i[,7:9])
-Coords3 = Coords2[Mapping[,1],]
-plot_N_map_xy(N=Count,XY=Coords3,leg.title="Count")
-
-Count = rowSums(Data$C_i[,10:12])
-crap = Count/Data$P_i
-Coords3 = Coords2[Mapping[,1],]
-plot_N_map_xy(N=crap,XY=Coords3,leg.title="Count")
+# #data mean
+# Pi_obs = matrix(0,n_surf,n_s)
+# for(isurf in 1:n_surf)Pi_obs[isurf,]=exp(Data_all$Y_i[,isurf])/sum(exp(Data_all$Y_i[,isurf]))
+# Pi_mean=colMeans(Pi_obs)
 # 
-
-Count = rowSums(Report$E_count_obs[,4:6])
-Coords3 = Coords2[Mapping[,1],]
-plot_N_map_xy(N=Count,XY=Coords3,leg.title="Count")
-  
-Count = Report$E_count_sp[2,]
-Coords3 = Coords2[Mapping[,1],]
-plot_N_map_xy(N=Count,XY=Coords3,leg.title="Count")
-
+# source('c:/users/paul.conn/git/OkhotskST/OkhotskSeal/R/util_funcs.R')
 # 
-#plot thinning by day
-plot(DayHour[,1],Report$Thin_trans[2,])
-
-
-#look at proportion of zeroes
-get_pred_zeros <- function(E_count,sim=TRUE){
-  if(sim)Rand = matrix(rpois(length(E_count),E_count),nrow(E_count),ncol(E_count))
-  if(!sim)Rand = E_count
-  Prop_zero=rep(0,ncol(E_count))
-  for(i in 1:ncol(E_count))Prop_zero[i]=sum(Rand[,i]==0)
-  Prop_zero
-}
-
-E_count = cbind(rowSums(Report$E_count_obs[,1:3]),rowSums(Report$E_count_obs[,4:6]),rowSums(Report$E_count_obs[,7:9]),rowSums(Report$E_count_obs[,10:12]))
-Data_sp = cbind(rowSums(Data$C_i[,1:3]),rowSums(Data$C_i[,4:6]),rowSums(Data$C_i[,7:9]),rowSums(Data$C_i[,10:12]))
-get_pred_zeros(E_count=E_count)
-get_pred_zeros(Data_sp,sim=FALSE)
-
-
+# plot_N_map_xy(N=Pi,XY=Grid_locs,leg.title="Rel abundance")
+# 
+# plot_N_map_xy(N=Report$Pi[1:n_s],XY=Grid_locs,leg.title="Rel abundance")
+# 
+# plot_N_map_xy(N=Pi_mean,XY=Grid_locs,leg.title="Rel abundance")
+# 
+# sum((Pi-Report$Pi[1:n_s])^2)/n_s
+# sum((Pi-Pi_mean)^2)/n_s
+# 
+# 
+# #plot_N_map_xy(N=Report$Mu_s[1:n_s]/sum(Report$Mu_s[1:n_s]),XY=Grid_locs,leg.title="Rel abundance")
+# 
+# plot_N_map_xy(N=exp(Data_all$Y_i[,2]),XY=Grid_locs,leg.title="Rel abundance")
+# plot_N_map_xy(N=exp(Data_all$Y_i[,1]),XY=Grid_locs,leg.title="Rel abundance")
+# plot_N_map_xy(N=exp(Data_all$Y_i[,3]),XY=Grid_locs,leg.title="Rel abundance")
+# plot_N_map_xy(N=exp(Data_all$Y_i[,4]),XY=Grid_locs,leg.title="Rel abundance")
+# plot_N_map_xy(N=exp(Data_all$Y_i[,5]),XY=Grid_locs,leg.title="Rel abundance")
+# 
+# plot_N_map_xy(N=exp(Report$Xi[1:n_s,1]),XY=Grid_locs,leg.title="Rel abundance")
+# plot_N_map_xy(N=exp(Report$Xi[1:n_s,2]),XY=Grid_locs,leg.title="Rel abundance")
+# plot_N_map_xy(N=exp(Report$Xi[1:n_s,3]),XY=Grid_locs,leg.title="Rel abundance")
+# plot_N_map_xy(N=exp(Report$Xi[1:n_s,4]),XY=Grid_locs,leg.title="Rel abundance")
+# plot_N_map_xy(N=exp(Report$Xi[1:n_s,5]),XY=Grid_locs,leg.title="Rel abundance")
+# 
+# 
+# 
+# 
+# #cur_day=10
+# #plot_N_map_xy(N=Report$Z_s[1,((cur_day-1)*n_s+1):(cur_day*n_s)],XY=loc_s,leg.title="Abundance")
+# 
+# Converge=Opt$convergence
+# 
+# 
+# #plot count data by apparent species
+# Count = rowSums(Data$C_i[,1:3])
+# Coords3 = Coords2[Mapping[,1],]
+# plot_N_map_xy(N=Count,XY=Coords3,leg.title="Count")
+# plot_N_map_xy(N=Report$E_count_sp[1,],XY=Coords3,leg.title="Count")
+# 
+# #look at thinning parameters
+# plot_N_map_xy(N=Thin[1:1285],XY=Coords3,leg.title="Count")
+# plot_N_map_xy(N=Report$Thin_trans[1,],XY=Coords3,leg.title="Count")
+# 
+# Count = rowSums(Data$C_i[,4:6])
+# Coords3 = Coords2[Mapping[,1],]
+# plot_N_map_xy(N=Count,XY=Coords3,leg.title="Count")
+# 
+# Count = rowSums(Data$C_i[,7:9])
+# Coords3 = Coords2[Mapping[,1],]
+# plot_N_map_xy(N=Count,XY=Coords3,leg.title="Count")
+# 
+# Count = rowSums(Data$C_i[,10:12])
+# crap = Count/Data$P_i
+# Coords3 = Coords2[Mapping[,1],]
+# plot_N_map_xy(N=crap,XY=Coords3,leg.title="Count")
+# # 
+# 
+# Count = rowSums(Report$E_count_obs[,4:6])
+# Coords3 = Coords2[Mapping[,1],]
+# plot_N_map_xy(N=Count,XY=Coords3,leg.title="Count")
+#   
+# Count = Report$E_count_sp[2,]
+# Coords3 = Coords2[Mapping[,1],]
+# plot_N_map_xy(N=Count,XY=Coords3,leg.title="Count")
+# 
+# # 
+# #plot thinning by day
+# plot(DayHour[,1],Report$Thin_trans[2,])
+# 
+# 
+# #look at proportion of zeroes
+# get_pred_zeros <- function(E_count,sim=TRUE){
+#   if(sim)Rand = matrix(rpois(length(E_count),E_count),nrow(E_count),ncol(E_count))
+#   if(!sim)Rand = E_count
+#   Prop_zero=rep(0,ncol(E_count))
+#   for(i in 1:ncol(E_count))Prop_zero[i]=sum(Rand[,i]==0)
+#   Prop_zero
+# }
+# 
+# E_count = cbind(rowSums(Report$E_count_obs[,1:3]),rowSums(Report$E_count_obs[,4:6]),rowSums(Report$E_count_obs[,7:9]),rowSums(Report$E_count_obs[,10:12]))
+# Data_sp = cbind(rowSums(Data$C_i[,1:3]),rowSums(Data$C_i[,4:6]),rowSums(Data$C_i[,7:9]),rowSums(Data$C_i[,10:12]))
+# get_pred_zeros(E_count=E_count)
+# get_pred_zeros(Data_sp,sim=FALSE)
+# 
+# 
