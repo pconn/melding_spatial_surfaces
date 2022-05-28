@@ -1,0 +1,213 @@
+---
+title: "A GLMM approach for combining multiple relative abundance surfaces"
+author: "Paul B. Conn, Jay M. Ver Hoef, Devin S. Johnson, Brett T. McClintock, and Brian Brost"
+#date: "5/16/2022"
+output:
+  pdf_document: default
+  html_document: default
+bibliography: master_bib.bib
+link-citations: yes
+---
+
+\textbf{Appendix S1: Combining relative abundance surfaces with different spatial support: theory and a vignette}
+
+
+In the main article, we focused on models where the spatial support of each surface was the same (i.e., each surface had the same pixel resolution and spatial extent).  In this appendix, we demonstrate how our GLMM approach can be adapted to accommodate spatial surfaces where predictions were made at different spatial scales.  This can include cases where pixel sizing
+is different, as well as cases where different areas are sampled (although we only consider the case where surfaces overlap to some degree).
+
+In order to accommodate this change, we make the following modifications.  First, denote the spatial domain of interest (i.e., the study area we wish to make inference to) as $\mathcal{D}$,
+and denote the spatial domain of the $i$th surface by $\mathcal{D}_i$.  We shall require that $\mathcal{D}_i \subseteq \mathcal{D}$ $\forall i$.  In practice, this just means that the combined map we're trying to estimate should include all areas covered in any of our spatial surfaces.  Next, we discretize $\mathcal{D}$ to include $S$ equal sized spatial cells, and assume that each of the relative abundance surfaces has been discretized into $S_i$ spatial cells (these need not be of equal area).  Finally, we reformulate eqn 1 from the main text as
+$$
+ {\bf y}_i = \alpha_i + \log({\bf A}_i \exp(\boldsymbol{\mu})) + \boldsymbol{\xi}_i + \boldsymbol{\epsilon}_i,
+$$
+making several changes to definitions.  First, the vectors ${\bf y}_i$,  $\boldsymbol{\xi}_i$, and $\boldsymbol{\epsilon}_i$, now have length $S_i$ (that is, the number of spatial cells is allowed to vary by surface).  The elements of $\boldsymbol{\mu}$, $\mu_k$, now refer to log-scale relative abundance in each of the $S$ cells (at the scale we want to make inference about). The $(S_i \times S$ matrix ${\bf A}_i$ is used to link these ``true`` log scale relative abundance values to the (possibly mismatched) spatial cells associated with spatial surface $i$.  In particular, if we let $s_{ij}$ denote cell $j$ from spatial surface $i$, and $s_k$ denote pixel $k$ of our desired relative abundance surface, we set the elements of ${\bf A}_i$, $a_{jk}$, equal to the area of cell $s_{ij}$ that is made up of pixel $s_k$.  This weighting is
+often termed ``proportional allocation" or ``areal weighting" in the context of geographic analysis [@GotwayYoung2002].
+
+We shall now demonstrate estimation with this formulation on a simple example.  We shall use
+a 30 x 30 underlying grid to generate data, which we will also use for the spatial support of $\boldsymbol{\mu}$.  We will generate data for 3 different relative abundance surfaces that vary by grid spacing and spatial coverage of the survey area.  The grid spacing of these surfaces is *not* nested; that is, there is fractional overlap between relative abundance grid cells and the $\boldsymbol{\mu}$ grid.  
+
+```{r,grids,tidy='styler',cache=T}
+  library(sf)
+  D = st_sfc(st_polygon(list(rbind(c(0,0), c(1,0), c(1,1), c(0,0)))))
+  Grid_mu = st_make_grid(D, n=c(30,30))
+  D1 = D
+  Grid_i = vector("list",3)
+  Grid_i[[1]] = st_make_grid(D1,n=c(20,20))
+  D2 = st_sfc(st_polygon(list(rbind(c(.2,.2), c(.8,.2), c(.8,.8), c(.2,.2)))))
+  Grid_i[[2]] = st_make_grid(D2,n=c(20,20))
+  D3 = st_sfc(st_polygon(list(rbind(c(.5,0), c(1,0), c(1,.5), c(.5,0)))))
+  Grid_i[[3]] = st_make_grid(D3,n=c(5,5))
+  
+  library(ggplot2)
+  Grid_mu_plot = ggplot()+geom_sf(data=Grid_mu)+ggtitle("Estimation grid")
+  Grid1_plot = ggplot() + geom_sf(data=Grid_i[[1]],color=alpha('blue',0.3),fill=alpha('blue',0.1)) + xlim(0,1)+ylim(0,1)+ggtitle("Grid for surface 1")
+  Grid2_plot = ggplot()+geom_sf(data=Grid_i[[2]],colour=alpha('darkgreen',0.3),fill=alpha('darkgreen',0.1))+ xlim(0,1)+ylim(0,1)+ggtitle("Grid for surface 2")
+  Grid3_plot = ggplot()+geom_sf(data=Grid_i[[3]],color=alpha('red',0.3),fill=alpha('red',0.2))+ xlim(0,1)+ylim(0,1)+ggtitle("Grid for surface 3")
+  gridExtra::grid.arrange(Grid_mu_plot,Grid1_plot,Grid2_plot,Grid3_plot, nrow = 2)
+```
+
+Our next step will be to construct ${\bf A}_i$ for each of the three relative abundance surfaces. We'll use some of the functionality of the ``sf" package in R to calculate the overlap between each relative abundance grid and the various cells of the estimation grid.
+
+```{r,A_setup,tidy='styler',cache=T}
+  A = Intersects = vector("list",3)
+  cell_size = st_area(Grid_mu[1])
+  for(isurf in 1:3){
+    Intersects[[isurf]] = A[[isurf]] = 1.0*st_intersects(Grid_i[[isurf]],Grid_mu,sparse=FALSE)
+    for(icell in 1:nrow(A[[isurf]])){
+      Which_intersects = which(Intersects[[isurf]][icell,]>0)
+      for(itarget in 1:length(Which_intersects)){
+        A[[isurf]][icell,Which_intersects[itarget]]=st_area(st_intersection(
+          Grid_i[[isurf]][icell],Grid_mu[Which_intersects[itarget]]))/cell_size
+      }
+    }
+  }
+```
+
+For instance, the sum of the first row of $A_3$ here is `r sum(A[[3]][1,])`, which makes sense because there are 9 cells from the $\boldsymbol{\mu}$ grid that contribute to expected abundance for each cell of $\mathcal{D}_3$.
+relative abundance surface only covers a quarter of the survey area.  In essence, the $A_i$ matrices are `picking' the the elements of $boldsymbol{\mu}$ that intersect with a particular relative abundance grid cell, and using the relative area of those intersecting cells to produce an expectation for different sized grid cells.
+
+Now that we've got those set up, let's simulate true relative abundance values $boldsymbol{\mu}$.
+
+```{r,sim_mu,tidy='styler',cache=T}
+set.seed(2020) #setting a random # seed so we can duplicate results
+n_s = length(Grid_mu)
+XY_mu = st_coordinates(st_centroid(Grid_mu))
+Dists = as.matrix(dist(XY_mu, diag=T, upper=T))
+Cov_exp = fields::Exp.cov(XY_mu,XY_mu,aRange=0.1)
+L = chol(Cov_exp)
+Mu = 1 + t(L) %*% rnorm(n_s,0,1)
+Nu = exp(Mu)
+Pi = Nu/(sum(Nu))
+```
+
+Here's what expected abundance looks like for this example:
+
+```{r,plot_mu,tidy='styler',cache=T}
+Grid_mu= st_sf(Grid_mu)
+Grid_mu$N = exp(Mu)
+ggplot()+geom_sf(data=Grid_mu,aes(fill=N))+ggtitle("Abundance intensity")
+
+```
+
+We will not typically be able to observe relative abundance (or density, abundance) directly,
+but must sample it in some fashion and attempt to estimate/predict what abundance is like in unsampled locations.  We've already indicated the spatial extent and pixel size for three relative abundance surfaces that we will have to work with.  Let's simulate some counts over these domains, assuming some level of random sampling.  However, we'll assume that the first (and largest) relative abundance surface is developed from citizen science data and is preferentially sampled - that is, observers are more likely to collect data where they expect to actually see the organism of interest [@ConnEtAl2017].  We'll assume the 2nd and 3rd surfaces are developed from scientific surveys where random sampling is employed.  Let's "collect" some counts for each of these study areas and estimate relative
+abundance surfaces for each one, using models with spatial autocorrelation to account for changing
+abundance over space. We'll do this by conducting virtual count surveys in different cells, assuming that abundance intensity (i.e., $\exp(\boldsymbol{\mu})$), or its analogue in larger grid cells) is constant within the cells surveyed.  If we were interested in the effect of different grid cell sizing on estimator performance, we'd probably want to revisit this assumption since conclusions can be affected by scale (i.e., via ``ecological fallacy"; [@GotwayYoung2002]).  However, since we're primarily trying to generate relative abundance surfaces to demonstrate our modeling approach, we'll proceed using this simplifying assumption.
+
+```{r,sim_y,tidy='styler',cache=T}
+
+XY = Exp_N_i = Sampled = Counts = Pred_surf = VC_surf = vector("list",3)
+N_sampled = c(50,50,25) #number of cells sampled in each grid
+N_cells = rep(0,3)
+for(igrid in 1:3){
+  XY[[igrid]]=st_coordinates(st_centroid(Grid_i[[igrid]]))
+  Exp_N_i[[igrid]]=A[[igrid]]%*%exp(Mu)  #expected abundance in each relative abundance grid
+  N_cells[igrid]=length(Grid_i[[igrid]])
+  if(igrid==1)Sampled[[igrid]]=sample(c(1:N_cells[igrid]),N_sampled[1],prob=Exp_N_i[[1]])
+  else Sampled[[igrid]]=sample(c(1:N_cells[igrid]),N_sampled[igrid])
+  Counts[[igrid]] = rpois(N_sampled[igrid],Exp_N_i[[igrid]][Sampled[[igrid]]])
+  #fit spatial GAM to each set of counts and predict expected count in each grid cell
+  GAM_data = data.frame(x=XY[[igrid]][,"X"][Sampled[[igrid]]],y=XY[[igrid]][,"Y"][Sampled[[igrid]]],count=Counts[[igrid]])
+  gam_fit = mgcv::gam(count~te(x,y),family='poisson',data=GAM_data)
+  Pred_data = data.frame(x=XY[[igrid]][,"X"],y=XY[[igrid]][,"Y"])
+  Pred_surf[[igrid]]=predict(gam_fit,Pred_data)
+  Xmat <- predict(gam_fit,Pred_data,type="lpmatrix")  #for Var-cov of predictions
+  VC_surf[[igrid]]= Xmat %*% gam_fit$Vp %*% t(Xmat)
+  diag(VC_surf[[igrid]])=diag(VC_surf[[igrid]])+0.0000001 #Tikhonov regularization so invertible
+}
+
+```
+
+Okay, so now we have log-scale relative abundance predictions and associated variance-covariance matrices for each grid.  Let's see what they look like before we through them into our estimation architecture.  We'll also plot "true" log-scale relative abundance so we can have something to compare them to.  Note the difference in x- and y-axes when comparing plots.
+
+```{r,plot_y,tidy='styler',cache=T}
+for(igrid in 1:3){
+  Grid_i[[igrid]]=st_sf(Grid_i[[igrid]])
+  Grid_i[[igrid]]$Log_rel_abund = Pred_surf[[igrid]]
+}
+ggplot()+geom_sf(data=Grid_i[[1]],aes(fill=Log_rel_abund))+ggtitle('Grid 1 - pref sampled')
+ggplot()+geom_sf(data=Grid_i[[2]],aes(fill=Log_rel_abund))+ggtitle('Grid 2 - scientific')
+ggplot()+geom_sf(data=Grid_i[[3]],aes(fill=Log_rel_abund))+ggtitle('Grid 3 - scientific')
+Grid_mu$mu = Mu
+ggplot()+geom_sf(data=Grid_mu,aes(fill=mu))
+
+```
+
+Now let's run these through our estimation machinery.  We'll enable process errors ($\boldsymbol{\xi}$) for 
+surface 1 (this was the surface generated from preferentially sampled count data), but will
+set them to zero for surfaces 2 and 3.  We'll need to compile TMB code with our data, as well as options for which process error streams to estimate.  We'll also need to use INLA to set up our GMRF bases to enable spatial covariance estimation given the various grid sizes (this is only needed for $\boldsymbol{\mu}$ and $\boldsymbol{\xi}_1$ in this example).
+
+```{r,run_tmb,tidy='styler',cache=T,echo=TRUE,results='hide',warning=FALSE,message=FALSE}
+library(TMB)
+library( INLA )
+
+TmbFile = "C:/Users/paul.conn/git/Data_integration/Data_integration/src/fit_multiple_surfaces_misalign"
+compile(paste0(TmbFile,".cpp"),"-O1 -g",DLLFLAGS="") 
+dyn.load( dynlib(TmbFile) )
+
+mesh_mu = inla.mesh.create( XY_mu )
+spde_mu <- (inla.spde2.matern(mesh_mu, alpha=2)$param.inla)[c("M0","M1","M2")]
+
+mesh_xi = inla.mesh.create( XY[[1]] )
+spde_xi <- (inla.spde2.matern(mesh_xi, alpha=2)$param.inla)[c("M0","M1","M2")]
+
+n_surf=3
+n_s_mu=n_s
+n_s = c(length(Pred_surf[[1]]),length(Pred_surf[[2]]),length(Pred_surf[[3]]))
+n_s_max = max(n_s)
+Y_i = matrix(0,n_s_max,n_surf)
+Omega_Y = array(0,dim=c(n_s_max,n_s_max,n_surf))
+A_i = array(0,dim=c(n_s_max,n_s_mu,n_surf))
+for(isurf in 1:n_surf){
+  Y_i[1:n_s[isurf],isurf]=Pred_surf[[isurf]]
+  Omega_Y[1:n_s[isurf],1:n_s[isurf],isurf]=solve(VC_surf[[isurf]])  
+  A_i[1:n_s[isurf],,isurf]=A[[isurf]]
+}
+
+#n_knots_xi = c(nrow(spde_xi$M0),0,0)
+n_knots_xi = c(0,0,0)
+n_knots_mu = nrow(spde_mu$M0)
+
+
+Data <- list("Y_i"=Y_i,"Omega_Y"=Omega_Y,
+  "M0_mu"=spde_mu$M0,"M1_mu"=spde_mu$M1,"M2_mu"=spde_mu$M2,
+              "M0"=spde_xi$M0,"M1"=spde_xi$M1,"M2"=spde_xi$M2,
+              "A_i"=A_i,"flag"=1,"n_s_mu"=n_s_mu,"n_s"=n_s,"n_surf"=n_surf,
+              "n_knots_xi"=n_knots_xi,"options"=c(0,0))
+Params <- list("log_alpha"=rep(0,n_surf), "log_tau_mu"=0, "log_kappa_mu"=0,"log_tau_xi"=rep(0,n_surf),
+              "log_kappa_xi"=rep(0,n_surf),"Mu_s"=rep(0,n_knots_mu),"Xi_s"=matrix(0,nrow(spde_xi$M0),n_surf))
+Random <- c("Mu_s","Xi_s")            
+
+#controlling which parameters to fix (NAs aren't estimated)
+Map_xi = matrix(NA,nrow(spde_xi$M0),n_surf)
+#Map_xi[1:n_s[1],1]=c(1:n_s[1])
+Map_log_kappa_xi = rep(NA,n_surf)
+#Map_log_kappa_xi[1]=n_s[1]+1
+Map_log_tau_xi = rep(NA,n_surf)
+#Map_log_tau_xi[1]=n_s[1]+2
+Map = list("Xi_s"=factor(Map_xi),"log_kappa_xi"=factor(Map_log_kappa_xi),
+                       "log_tau_xi"=factor(Map_log_tau_xi))
+
+
+Obj = MakeADFun( data=Data, parameters=Params, random=Random, map=Map, DLL="fit_multiple_surfaces_misalign",silent=FALSE)
+Obj$fn( Obj$par )
+#Obj <- normalize ( Obj , flag ="flag", value = 0) #only do if options[1]=1
+Lower = -50  #trying to prevent -Inf,Inf bounds resulting in nlminb failure (NaN gradient)
+Upper = 50
+Opt = nlminb( start=Obj$par, objective=Obj$fn, gradient=Obj$gr, lower=Lower, upper=Upper, control=list(trace=1, eval.max=500, iter.max=500))         #
+Report = Obj$report()
+        
+``` 
+Now, let's see what surface we've managed to construct on the the grid specified for
+$\boldsymbol{\mu}$.  We'll plot truth next to the estimated surface on both the log scale and real scale.
+
+```{r,plot_tmb,tidy='styler',cache=T}
+Grid_mu$mu_est = Report$Mu_s[1:n_s_mu]
+Grid_mu$pi_est = Report$Pi
+Grid_mu$pi = Grid_mu$N/sum(Grid_mu$N)
+ggplot()+geom_sf(data=Grid_mu,aes(fill=mu))+ggtitle("Truth- log scale")
+ggplot()+geom_sf(data=Grid_mu,aes(fill=mu_est))+ggtitle("Estimate- log scale")
+ggplot()+geom_sf(data=Grid_mu,aes(fill=pi))+ggtitle("Truth- real scale")
+ggplot()+geom_sf(data=Grid_mu,aes(fill=pi_est))+ggtitle("Estimate- real scale")
+
+```
