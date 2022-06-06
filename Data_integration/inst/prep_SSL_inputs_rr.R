@@ -1,4 +1,5 @@
-# integrate_SSL.R  integrate POP and UDs for SSL
+# prep_SSL_inputs_rr.R  Prepare inputs for combining 
+# Steller sea lion POP and UD surfaces, assuming diagonal covariance
 
 # load UD info 
 library(terra)
@@ -34,26 +35,20 @@ X = cbind(hab_cov[,"depth"],hab_cov[,"slope"],hab_cov[,"dist_site"])
 
 logUD = log_UD-mean(log_UD)  #standardize so has mean 0...better for optimization
 VC_logUD = X %*% (UDvar %*% t(X))
-diag(VC_logUD) = diag(VC_logUD)+0.000001  #nugget regularization - makes sure proper var-cov matrix
-Cor_logUD = cov2cor(VC_logUD)
+diag(VC_logUD)=diag(VC_logUD)+0.000001  #diagonal regularization so invertible
+VC_inv_logUD_full = solve(VC_logUD)
+VCinv_logUD = diag(length(logUD))
+diag(VCinv_logUD)=diag(VC_inv_logUD_full)
+
 
 #load POP data
-load("./data_integration/data/POPfits.rda")
-log_POPfits = log(POPfits[1:n_model,3:1002])
-logPOP = rowMeans(log_POPfits)
-VC_logPOP = cov(t(log_POPfits))
-Cor_logPOP = cov2cor(VC_logPOP)
-diag(VC_logPOP)=diag(VC_logPOP)+0.000001
+load("./data_integration/data/POPests.RData")
+n_s <- length(logPOP)
 
-VCinv_logUD = solve(VC_logUD)
-VCinv_logPOP = solve(VC_logPOP)
-
-n_s = length(logPOP)
-Grid_locs = data.frame(POPfits[,1:2])
+Grid_locs = st_coordinates(st_centroid(Grid_sf))
 mesh = inla.mesh.create( Grid_locs )
 n_knots = mesh$n
 Eta_index = mesh$idx$loc-1  #which spde REs to apply as random effects for each cell centroid
-#note it might be a lot faster to just to model the individual data points instead of the whole grid
 spde <- (inla.spde2.matern(mesh, alpha=2)$param.inla)[c("M0","M1","M2")]
 
 
@@ -62,9 +57,9 @@ Data_SSL <- list("M0"=spde$M0,"M1"=spde$M1,"M2"=spde$M2,
                  "options"=c(0,0),"Mesh_index"=Eta_index,"matern_pri"=c(0,0,0,0),
                  "n_surf"=2)
 Data_SSL$Y_i = cbind(logPOP,logUD)
-Data_SSL$Omega_Y = array(dim=c(n_s,n_s,2))   #inverse of Sigma needed for fast dmvnorm-type calcs
-Data_SSL$Omega_Y[,,1]=VCinv_logPOP
-Data_SSL$Omega_Y[,,2]=VCinv_logUD
+Data_SSL$Omega_Y1 = as(VCinv_logPOP,"dgTMatrix")
+Data_SSL$Omega_Y2 = as(VCinv_logUD,"dgTMatrix")
+
 
 #this block lifted from sdmTMB package
 set.seed(12345)

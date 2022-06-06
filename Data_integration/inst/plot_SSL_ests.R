@@ -1,14 +1,13 @@
 # plot SSL maps for ms.
 library(ggplot2)
 library(RColorBrewer)
+library(sf)
+
 
 load("output_rr_bias.RData")
-load("./data_integration/data/POPfits.RDa")
-Grid_locs = POPfits[,c(1:2)]
-source('c:/users/paul.conn/git/OkhotskST/OkhotskSeal/R/util_funcs.R')
+load('./data_integration/data/fitLangevin.RData') #only needed for Grid_sf
+Grid_locs = as.matrix(st_coordinates(st_centroid(Grid_sf)))
 
-require(ggplot2)
-library(RColorBrewer)
 myPalette <- colorRampPalette(brewer.pal(9, "YlOrBr"))
 
 get_pi <- function(x) { exp(x) / sum(exp(x))}
@@ -24,19 +23,17 @@ my_theme=theme(axis.ticks = element_blank(), axis.text = element_blank(),
                plot.title = element_text(hjust = 0, size=10)) 
 
 
-#scale_log <-  scale_fill_gradientn(colours=myPalette(7),limits=log_lims,
-#  
 scale_log <-  scale_fill_gradientn(colours=myPalette(4),limits=log_lims,
                                    breaks = c(-30,-15,0,15),values=scales::rescale(c(-.9,-0.3,.1,.4)))
-breaks = c(-30,-5,-2,0,2,5,15),values=scales::rescale(c(-.8, -.45, -0.3, -.2,-.1,0,0.05)))
+#breaks = c(-30,-5,-2,0,2,5,15),values=scales::rescale(c(-.8, -.45, -0.3, -.2,-.1,0,0.05)))
 scale_real <- scale_fill_gradientn(colours=myPalette(100),limits=real_lims, 
                                    breaks=c(0,0.003,0.006,0.009,0.012),values=scales::rescale(c(-0.9,-0.8,-0.7,1.0)))
 
 
-Plot_DF = data.frame( Easting = Grid_locs[,1],
-                      Northing = Grid_locs[,2],4,
+Plot_DF = data.frame( Easting = round(Grid_locs[,1],8),
+                      Northing = round(Grid_locs[,2], 8),
                       Rel_abund = Data_SSL$Y_i[,1])
-POP_log_plot = ggplot(Plot_DF) + aes(Easting,Northing,fill=Rel_abund)+geom_raster()+my_theme+
+POP_log_plot = ggplot(Plot_DF) + aes(x=Easting,y=Northing,fill=Rel_abund)+geom_raster()+my_theme+
   scale_log + labs(fill = "Log") + ggtitle('POP') 
 
 

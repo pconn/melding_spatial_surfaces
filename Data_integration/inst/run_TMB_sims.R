@@ -75,7 +75,7 @@ Params_all <- list("log_tau_mu"=0, "log_kappa_mu"=0,"Mu_s"=rep(0,n_knots))
 Random_all <- c("Mu_s","Xi_s")
 
 Ind_log = list("isim"=NA)
-DEBUG=TRUE
+DEBUG=FALSE
 
 st_time = Sys.time()
 for(isim in 1:n_sims){

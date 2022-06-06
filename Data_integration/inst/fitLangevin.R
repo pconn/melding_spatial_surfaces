@@ -88,4 +88,4 @@ UDcoeffs <- fitLangevin$CIbeta$mu$est[,c(2,3,4)] # RSF coefficients (negative = 
 UDvar <- fitLangevin$mod$Sigma[c(2,3,4),c(2,3,4)] # RSF coefficient variance-covariance matrix
 rownames(UDvar) <- colnames(UDvar) <- names(UDcoeffs)
 
-save.image("fitLangevin.RData")
+save(logUD,UDvar,Grid_sf,hab_cov,file="fitLangevin.RData")
